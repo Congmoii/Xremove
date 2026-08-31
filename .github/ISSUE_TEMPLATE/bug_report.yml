@@ -1,0 +1,69 @@
+name: Bug Report
+description: Create a report to help us improve Xremove
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thank you for reporting an issue with Xremove!
+        
+        ⚠️ **PRIVACY WARNING**: Do NOT attach or upload confidential, proprietary, or personal documents in public issues. Use sanitized synthetic sample files only.
+  - type: input
+    id: version
+    attributes:
+      label: Xremove Version
+      placeholder: "e.g. v1.0.0 Full Release"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating System
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux / macOS (Dev Server)
+        - Other
+    validations:
+      required: true
+  - type: dropdown
+    id: file_type
+    attributes:
+      label: File Type
+      options:
+        - Image (PNG / JPG / WEBP)
+        - Text (TXT / MD)
+        - Document (DOCX / PDF)
+        - Video (MP4 / WEBM)
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Reproduction Steps
+      placeholder: |
+        1. Open Xremove.exe
+        2. Drag and drop file 'sample.docx'
+        3. Click 'Download result'
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected Behavior
+      placeholder: "Describe what you expected to happen."
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual Behavior
+      placeholder: "Describe what actually happened."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant Logs (Sanitized)
+      description: Please inspect `logs/launcher.log` or `logs/engine-b.log` and remove any personal paths before pasting.
+      render: text

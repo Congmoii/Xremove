@@ -1,0 +1,56 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build and distribution outputs
+dist/
+release/final/
+*.zip
+*.7z
+*.rar
+*.tar.gz
+
+# Bundled local runtimes and binaries
+runtime/python/
+tools/ffmpeg/
+*.exe
+!launcher/
+
+# Logs and runtime artifacts
+logs/
+*.log
+
+# Temporary and cache directories
+temp/
+tmp/
+.cache/
+.tempmediaStorage/
+coverage/
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/*
+!.vscode/extensions.json
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Vendored upstream clones (bootstrapped via scripts/bootstrap_vendor.mjs)
+vendor/watermarks-remover/
+vendor/gemini-watermark-remover/
+
+# Shortcuts
+*.lnk

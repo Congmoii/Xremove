@@ -1,0 +1,78 @@
+@import 'tailwindcss';
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+@theme {
+  /* Fixed Single Bright Light Theme */
+  --color-bg: #f8fafc;
+  --color-sidebar: #f1f5f9;
+  --color-workspace: #ffffff;
+  --color-panel: #ffffff;
+  --color-surface: #f8fafc;
+  --color-hover: #f1f5f9;
+  --color-line: #e2e8f0;
+  --color-line-strong: #cbd5e1;
+  --color-accent: #2563eb;
+  --color-accent-dim: #1d4ed8;
+  --color-ready: #16a34a;
+  --color-warning: #d97706;
+  --color-critical: #dc2626;
+  --color-ink: #0f172a;
+  --color-ink-dim: #475569;
+  --color-ink-faint: #64748b;
+
+  --color-brand: #1d4ed8;
+
+  --font-sans: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Segoe UI Mono", Menlo, Consolas, monospace;
+}
+
+/* Brand mark rendered via mask tinted by blue brand color */
+.brand-mark {
+  background-color: var(--color-brand);
+  -webkit-mask: var(--brand-mark-src) center / contain no-repeat;
+  mask: var(--brand-mark-src) center / contain no-repeat;
+}
+
+body {
+  font-family: var(--font-sans);
+  background-color: var(--color-bg);
+  color: var(--color-ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Checker backdrop for transparent image viewports */
+.checker {
+  background-color: #f1f5f9;
+  background-image:
+    linear-gradient(45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(-45deg, #e2e8f0 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #e2e8f0 75%),
+    linear-gradient(-45deg, transparent 75%, #e2e8f0 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+/* Scrollbars: smooth and modern light */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+*::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
