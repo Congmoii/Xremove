@@ -1,0 +1,79 @@
+name: Prepare standalone HTML release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout tagged source
+        uses: actions/checkout@v4
+
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 12.1.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: pnpm
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Confirm tag matches package version
+        run: node -e 'const version = require("./package.json").version; if (process.env.GITHUB_REF_NAME !== `v${version}`) { throw new Error(`Tag ${process.env.GITHUB_REF_NAME} does not match package version ${version}`); }'
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Fetch and verify pinned model
+        run: pnpm run fetch:model
+
+      - name: Bootstrap pinned service dependency
+        run: pnpm run bootstrap:vendor
+
+      - name: Install FFmpeg for legacy service tests
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Typecheck
+        run: pnpm run typecheck
+
+      - name: Run unit tests
+        run: pnpm test
+
+      - name: Build HTML release assets
+        run: pnpm run build:release
+
+      - name: Install headless Chromium
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Verify checksums, ZIP contents, and file opening
+        run: node tests/verify_release_package.mjs
+
+      # Keep the assets inaccessible to the public until model distribution
+      # rights have been independently confirmed by the maintainer.
+      - name: Create draft GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          prefix="release/github/Xremove-${GITHUB_REF_NAME}"
+          gh release create "$GITHUB_REF_NAME" \
+            "${prefix}.html" \
+            "${prefix}.html.sha256.txt" \
+            "${prefix}-HTML-only.zip" \
+            "${prefix}-HTML-only.zip.sha256.txt" \
+            --verify-tag --draft --generate-notes --title "Xremove ${GITHUB_REF_NAME}"
