@@ -1,0 +1,1 @@
+Hôm nay tôi kiểm​ tra Xremove bằng một đoạn văn‌ bản tiếng Việt. Tệp này có năm dấu‍ chèn vô hình nhưng nội⁠ dung hiển thị vẫn đọc được bình thường. Kết﻿ quả mong đợi là công cụ phát hiện và loại bỏ đúng năm ký tự ẩn, giữ nguyên dấu tiếng Việt, dấu câu và các khoảng trắng.

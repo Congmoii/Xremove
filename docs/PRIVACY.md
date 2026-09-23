@@ -1,46 +1,18 @@
-# Privacy Architecture and Data Handling
+# Quyền riêng tư và lưu giữ dữ liệu
 
-Xremove is built with a strict **local-first privacy model**. This document outlines how data flows through the application, where data is held, and how resources are reclaimed.
+Xremove không gửi ảnh hay tài liệu lên API đám mây và không tích hợp telemetry. Bản HTML độc lập đã nhúng mô hình U2NetP và WASM; tách nền, làm sạch ảnh và các chức năng văn bản/DOCX hỗ trợ chạy trong trình duyệt, không cần mạng. Dịch vụ cục bộ trên `127.0.0.1` chỉ thuộc quy trình Windows cũ.
 
----
+## Dữ liệu trong trình duyệt
 
-## Data Flow Lifecycle
+- Ảnh gốc, bitmap và mask nằm trong bộ nhớ của tab. Mã giải phóng bitmap và Blob URL khi người dùng bỏ ảnh hoặc rời workspace; thời điểm bộ thu gom bộ nhớ thu hồi các bộ đệm khác do trình duyệt quyết định.
+- Hàng đợi tách nền sẽ dừng khi tab bị đóng; không có bảo đảm chạy ngầm cho suy luận WASM trong tab.
+- `localStorage` giữ lựa chọn ngôn ngữ `xremove.lang`. Khi có job dịch vụ, `xremove.pendingJob` giữ **job ID, tên tệp và MIME** để giao diện mở lại có thể tiếp tục. Không lưu nội dung tệp hoặc token phiên trong `localStorage`. Mục này được xóa khi lấy được kết quả, hủy hoặc khi dịch vụ xác nhận job đã mất.
 
-```
-[User Input File]
-      ↓
-[In-Memory Inspection / Classification]
-      ↓
-[Local Processing] (Browser Canvas OR Local Service @ 127.0.0.1)
-      ↓
-[In-Memory Preview Result]
-      ↓
-[User Explicit Download Request]
-      ↓
-[Memory Reclamation / Object URL Revocation]
-```
+## Dữ liệu của job dịch vụ
 
----
+- Giao diện gửi tệp dạng nhị phân đến dịch vụ Python cùng nguồn. Dịch vụ tạo tệp đầu vào/kết quả tạm trong thư mục `Xremove-jobs/run-*` dưới thư mục tạm của hệ điều hành (thường là `%TEMP%` trên Windows). Tệp đầu vào được xóa khi job thành công; kết quả và báo cáo được giữ tối đa một giờ để có thể kết nối lại.
+- Job hủy hoặc thất bại được dọn ngay khi worker dừng. Nếu dịch vụ bị tắt bất thường, thư mục chạy cũ được dọn khi dịch vụ khởi động lại **sau 24 giờ**; có thể còn trên đĩa trước thời điểm đó.
+- Dịch vụ giữ token phiên ngẫu nhiên trong bộ nhớ tiến trình. Trình duyệt nhận token từ `/api/session` cùng nguồn; API job yêu cầu token, Host/Origin hợp lệ và giới hạn kích thước/hàng đợi. Điều này bảo vệ khỏi yêu cầu web chéo nguồn thông thường, không thay thế cơ chế phân quyền giữa các chương trình cùng tài khoản Windows.
+- Launcher có thể ghi đường dẫn cài đặt và lỗi khởi động vào `logs/launcher.log`. Dịch vụ không ghi token hay nội dung tệp vào log HTTP.
 
-## Key Privacy Guarantees
-
-1. **No External Network Communication**:
-   - Image processing runs 100% inside your browser environment using HTML5 Canvas APIs.
-   - Text, DOCX, and video workflows communicate exclusively with the local companion service bound to the loopback interface (`127.0.0.1:8765`).
-   - No data packets leave the host machine.
-
-2. **No User Document Persistence**:
-   - Original and processed files are never saved to disk automatically.
-   - Processed files are created as transient browser `Blob` objects in memory.
-   - Files are saved to your filesystem only when you explicitly click "Download result".
-
-3. **Memory and State Reclamation**:
-   - When you click "Add another file", return to the home screen, or close the application window, all `Blob` URLs (`URL.revokeObjectURL`) and text buffers are immediately cleared.
-
-4. **Local Storage Usage**:
-   - `localStorage` is used solely for storing non-sensitive user UI preferences:
-     - `xremove.lang`: User language selection (`"vi"` or `"en"`).
-   - Document contents, filenames, history, and hashes are **never** stored in `localStorage` or `sessionStorage`.
-
-5. **Telemetry and Analytics**:
-   - Xremove contains zero telemetry, analytics, trackers, or remote logging services.
+Sau khi đóng Xremove và khi không còn job cần lấy lại, người dùng có thể xóa thư mục `Xremove-jobs` trong thư mục tạm của hệ điều hành. Việc này làm mất các kết quả chưa tải.

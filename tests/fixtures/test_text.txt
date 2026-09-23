@@ -1,0 +1,3 @@
+Xremove​ Local‌ Watermark﻿ Cleaner⁠ Verification‎ Text‏ Document.
+This is visible line 2 with​ zero-width‌ spaces embedded.
+End of test document.

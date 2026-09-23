@@ -1,4 +1,0 @@
-Tiêu đề tiếng Việt có dấu: Kiểm tra Xremove v1.0.0!
-Đoạn 1:​Chứa‌ký‍tự⁠ẩn﻿.
-Đoạn 2: Giữ nguyên emoji 🚀🌟🎉 và cấu trúc dấu câu: (100%, [A], 'B' - "C").
-Hết.

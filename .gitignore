@@ -1,11 +1,12 @@
 # Dependencies
 node_modules/
+.pnpm-store/
 .pnp
 .pnp.js
 
 # Build and distribution outputs
 dist/
-release/final/
+release/
 *.zip
 *.7z
 *.rar
@@ -14,12 +15,36 @@ release/final/
 # Bundled local runtimes and binaries
 runtime/python/
 tools/ffmpeg/
+models/*.onnx
 *.exe
 !launcher/
 
 # Logs and runtime artifacts
 logs/
 *.log
+output/
+backups/
+github-export/
+plans/
+src/imports/pasted_text/
+ANTIGRAVITY_PROMPT.txt
+HANDOFF_ANTIGRAVITY.md
+tests/fixtures/downloaded_*
+tests/fixtures/full_out_*
+tests/fixtures/matrix_cleaned_*
+tests/fixtures/final_matrix_test.txt
+tests/fixtures/sample_cleaned.mp4
+docs/changes/
+scripts/diagnose_launcher.mjs
+scripts/export_html_to_desktop.mjs
+scripts/validate_cleaned_docx.py
+test.py
+start.bat
+tests/final_matrix_verification.mjs
+tests/full_matrix_verification.mjs
+tests/verify_final_matrix.mjs
+tests/verify_launcher_e2e.mjs
+tests/verify_docx_matrix.mjs
 
 # Temporary and cache directories
 temp/

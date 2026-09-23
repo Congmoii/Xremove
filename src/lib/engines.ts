@@ -6,8 +6,12 @@
 import { removeWatermarkFromImage } from "gemini-watermark-remover/browser";
 export { removeWatermarkFromImage };
 import type { Classification } from "./classify";
+import { cleanLocalDocx, cleanLocalTextFile } from "./localTextClean.ts";
 
-const SERVICE_URL = "http://127.0.0.1:8765";
+const PENDING_KEY = "xremove.pendingJob";
+const SERVICE_ID = "xremove-local-jobs";
+const SERVICE_VERSION = "1.1.1";
+export type ProcessingOperation = "clean" | "metadata";
 
 export interface ProcessReport {
   kind?: string;
@@ -74,82 +78,174 @@ function canvasToBlob(
 }
 
 // Engine A — real GargantuaX SDK. We do not reimplement the algorithm.
-async function processWithEngineA(file: File): Promise<ProcessResult> {
+async function processWithEngineA(file: File, signal?: AbortSignal): Promise<ProcessResult> {
+  signal?.throwIfAborted();
   const img = await loadImage(file);
   const { canvas } = await removeWatermarkFromImage(img);
+  signal?.throwIfAborted();
   const type = file.type && file.type.startsWith("image/") ? file.type : "image/png";
   const blob = await canvasToBlob(canvas, type);
   return { blob, filename: outputName(file.name) };
 }
 
-function toBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
+export interface PendingServiceJob { id: string; filename: string; mime: string; operation?: ProcessingOperation }
 
-function fromBase64(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
-async function serviceHealthy(): Promise<boolean> {
+export function pendingServiceJob(): PendingServiceJob | null {
   try {
-    const res = await fetch(`${SERVICE_URL}/health`, {
-      method: "GET",
-      signal: AbortSignal.timeout(2000),
-    });
-    return res.ok;
+    const value = JSON.parse(localStorage.getItem(PENDING_KEY) || "null");
+    return value && /^[0-9a-f]{32}$/.test(value.id) && typeof value.filename === "string" &&
+      typeof value.mime === "string" && (value.operation === undefined || value.operation === "clean" || value.operation === "metadata") ? value : null;
   } catch {
-    return false;
+    return null;
   }
 }
 
-// Engine B — local service. Sends Base64, decodes the cleaned Base64 result.
-async function processWithEngineB(file: File): Promise<ProcessResult> {
-  if (!(await serviceHealthy())) {
+function rememberJob(job: PendingServiceJob | null) {
+  try {
+    if (job) localStorage.setItem(PENDING_KEY, JSON.stringify(job));
+    else localStorage.removeItem(PENDING_KEY);
+  } catch { /* private browsing may deny storage */ }
+}
+
+async function serviceToken(): Promise<string> {
+  if (typeof location === "undefined" || location.protocol !== "http:" || location.hostname !== "127.0.0.1") {
+    throw new EngineUnavailableError("Open Xremove.exe to use local document and video jobs");
+  }
+  try {
+    const health = await fetch("/api/health", { signal: AbortSignal.timeout(3000) });
+    const identity = await health.json();
+    if (!health.ok || identity.service !== SERVICE_ID || identity.version !== SERVICE_VERSION) {
+      throw new EngineUnavailableError("A different or outdated local service is running");
+    }
+    const response = await fetch("/api/session", { signal: AbortSignal.timeout(3000) });
+    const session = await response.json();
+    if (!response.ok || session.service !== SERVICE_ID || session.version !== SERVICE_VERSION ||
+      typeof session.token !== "string") throw new EngineUnavailableError("Invalid service session");
+    return session.token;
+  } catch (error) {
+    if (error instanceof EngineUnavailableError) throw error;
     throw new EngineUnavailableError("Local service is unavailable");
   }
+}
 
-  const bytes = new Uint8Array(await file.arrayBuffer());
-  const res = await fetch(`${SERVICE_URL}/clean`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      filename: file.name,
-      mime: file.type,
-      data: toBase64(bytes),
-    }),
-    signal: AbortSignal.timeout(30000),
+async function jobRequest(path: string, token: string, init: RequestInit = {}) {
+  return fetch(path, {
+    ...init,
+    headers: { Authorization: `Bearer ${token}`, ...init.headers },
   });
+}
 
-  if (!res.ok) throw new EngineUnavailableError(`Service error ${res.status}`);
+async function awaitServiceJob(job: PendingServiceJob, token: string, signal?: AbortSignal): Promise<ProcessResult> {
+  let disconnected = 0;
+  const cancel = () => {
+    void jobRequest(`/api/jobs/${job.id}`, token, { method: "DELETE" }).catch(() => undefined);
+    rememberJob(null);
+  };
+  signal?.addEventListener("abort", cancel, { once: true });
+  try {
+    for (;;) {
+      signal?.throwIfAborted();
+      let response: Response;
+      try {
+        response = await jobRequest(`/api/jobs/${job.id}`, token, { signal: AbortSignal.timeout(5000) });
+      } catch {
+        // The job keeps running in the service while the UI is disconnected.
+        if (++disconnected >= 20) throw new EngineUnavailableError("Connection lost; reconnect to check the job");
+        await new Promise((resolve) => setTimeout(resolve, 1000));
+        continue;
+      }
+      disconnected = 0;
+      if (response.status === 401) {
+        rememberJob(null);
+        throw new EngineUnavailableError("Service session changed; the previous job cannot be resumed");
+      }
+      if (response.status === 404) {
+        rememberJob(null);
+        throw new EngineUnavailableError("Job no longer exists (service restarted or result expired)");
+      }
+      if (!response.ok) throw new EngineUnavailableError(`Service status error ${response.status}`);
+      const state = await response.json();
+      if (state.status === "done") {
+        const result = await jobRequest(`/api/jobs/${job.id}/result`, token, { signal: AbortSignal.timeout(30000) });
+        if (!result.ok) throw new EngineUnavailableError(`Result unavailable (${result.status})`);
+        const blob = await result.blob();
+        if (!blob.size) throw new Error("Invalid output");
+        rememberJob(null);
+        return { blob, filename: outputName(job.filename), report: state.report };
+      }
+      if (state.status === "error" || state.status === "cancelled") {
+        rememberJob(null);
+        throw new Error(state.error || `Job ${state.status}`);
+      }
+      await new Promise((resolve) => setTimeout(resolve, 700));
+    }
+  } finally {
+    signal?.removeEventListener("abort", cancel);
+  }
+}
 
-  const payload = await res.json();
-  const cleaned = fromBase64(payload.data || payload.cleaned);
-  const outType = payload.mime || file.type || "application/octet-stream";
-  const arr = new Uint8Array(cleaned);
-  const blob = new Blob([arr], { type: outType });
-  return { blob, filename: outputName(file.name), report: payload.report };
+export async function resumeServiceJob(signal?: AbortSignal): Promise<{ result: ProcessResult; job: PendingServiceJob } | null> {
+  const job = pendingServiceJob();
+  if (!job) return null;
+  const token = await serviceToken();
+  return { result: await awaitServiceJob(job, token, signal), job };
+}
+
+// Binary upload; the service owns the job independently of the browser tab.
+async function processWithEngineB(file: File, operation: ProcessingOperation, signal?: AbortSignal): Promise<ProcessResult> {
+  if (file.size === 0 || file.size > 100 * 1024 * 1024) throw new UnsupportedFileError("File exceeds 100 MB or is empty");
+  const token = await serviceToken();
+  signal?.throwIfAborted();
+  const response = await jobRequest("/api/jobs", token, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "X-File-Name": encodeURIComponent(file.name),
+      "X-File-Type": file.type || "application/octet-stream",
+      "X-Operation": operation,
+    },
+    body: file,
+    signal,
+  });
+  if (!response.ok) throw new EngineUnavailableError(`Service rejected upload (${response.status})`);
+  const data = await response.json();
+  if (!/^[0-9a-f]{32}$/.test(data.id)) throw new EngineUnavailableError("Invalid job ID");
+  const job = { id: data.id, filename: file.name, mime: file.type || "application/octet-stream", operation };
+  rememberJob(job);
+  return awaitServiceJob(job, token, signal);
 }
 
 // Router — maps classification to an engine. No UI exposure.
 export async function processFile(
   file: File,
   cls: Classification,
+  signal?: AbortSignal,
+  operation: ProcessingOperation = "clean",
 ): Promise<ProcessResult> {
+  signal?.throwIfAborted();
+  if (operation === "clean" && cls.kind === "text") {
+    const result = await cleanLocalTextFile(file);
+    signal?.throwIfAborted();
+    return result;
+  }
+  if (operation === "clean" && cls.kind === "document" && cls.ext === "docx") {
+    const result = await cleanLocalDocx(file);
+    signal?.throwIfAborted();
+    return result;
+  }
+  if (operation === "metadata") {
+    if (cls.kind === "image" || cls.kind === "video" || cls.kind === "document") {
+      return processWithEngineB(file, operation, signal);
+    }
+    throw new UnsupportedFileError("Metadata-only mode supports images, video, PDF and DOCX");
+  }
   switch (cls.kind) {
     case "image":
-      return processWithEngineA(file);
+      return processWithEngineA(file, signal);
     case "video":
     case "text":
     case "document":
-      return processWithEngineB(file);
+      return processWithEngineB(file, operation, signal);
     case "legacy_doc":
       throw new LegacyDocError("Legacy .doc files are not currently supported. Please save the document as .docx.");
     default:

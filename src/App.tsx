@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useRef, useState } from "react"
 
 import brandMark from "@/imports/image.png"
+import { BackgroundWorkspace } from "@/background/BackgroundWorkspace"
 import { classifyFile, type Classification, type FileKind } from "@/lib/classify"
 import {
   extractDocxPreviewText,
@@ -9,6 +10,8 @@ import {
 } from "@/lib/docxPreview"
 import {
   processFile,
+  pendingServiceJob,
+  resumeServiceJob,
   EngineUnavailableError,
   UnsupportedFileError,
   LegacyDocError,
@@ -27,7 +30,7 @@ const T = {
     preview: "Preview",
     home: "Return to home",
     start: "Choose file",
-    startDrop: "or drag files here",
+    startDrop: "or drag a file or text here; paste text with Ctrl+V",
     startHint: "IMAGES · VIDEOS · TEXT & DOCS",
     tabImage: "Images",
     tabVideo: "Videos",
@@ -47,15 +50,23 @@ const T = {
     // Errors
     errTitle: "Could not process this file",
     errService: "Local processing service is not ready.",
-    errServiceHint: "To process text and documents, launch the full Xremove application using Xremove.exe.",
+    errServiceHint: "TXT, Markdown and DOCX work in this HTML. PDF and video need the companion service.",
     errVideo: "The required local video processing component is not available.",
-    errUnsupported: "This file type is not supported.",
+    errUnsupported: "This file type is not supported here. Use TXT, Markdown or DOCX for document cleanup.",
+    errInvalidOutput: "Processing returned an invalid or empty file.",
+    errProcessing: "Processing failed. Please retry or check the local service log.",
     errLegacyDoc: "Legacy .doc files are not currently supported. Please save the document as .docx.",
     errRetry: "Add another file",
     errRetryBtn: "Retry",
     errAddBtn: "Add another file",
     // Actions
     actDownload: "Download result",
+    opClean: "Clean file: text & metadata",
+    opBackground: "Remove background",
+    opMetadata: "Remove file metadata",
+    metadataHint: "Removes supported embedded file metadata locally. It cannot prove a file was not made with AI.",
+    metadataDone: "File metadata processed",
+    opHint: "Choose the action before selecting files.",
     actCopy: "Copy image",
     actCopyText: "Copy text",
     actAdd: "Add another file",
@@ -76,6 +87,7 @@ const T = {
     repDocProcessed: "Word document processed",
     repDetected: "Invisible characters detected:",
     repRemoved: "Removed:",
+    repMetadataRemoved: "Document properties removed:",
     repVisible: "Visible content:",
     repUnchanged: "Unchanged",
     repStructurePreserved: "Document structure: Preserved",
@@ -84,12 +96,12 @@ const T = {
     noFile: "No file selected",
     noFileHint: "Drop or select an image, video, or text file to preview it here.",
     // Hero
-    heroTitle: "Xremove v1.0.0 — Stable",
+    heroTitle: "Xremove HTML 1.1.2 — Local tools",
     heroSub:
-      "Local processing for compatible images, text/documents, and experimental video workflows.\nImages can run directly in the standalone HTML. Text/document/video processing requires the local companion service with Python 3.10+.\nVideo support is currently Beta.",
+      "Remove image backgrounds and clean TXT, Markdown or DOCX locally in this HTML. Drop a document to automatically remove supported invisible characters and DOCX properties. PDF and video require a separate service.",
     // Compact intro strip
     introStrip:
-      "Xremove processes compatible images, videos, and text locally. Drop a file and the app automatically handles the rest.",
+      "Choose an action, then select files for local processing.",
     introBadge: "LOCAL PROCESSING",
     // How it works
     howTitle: "How Xremove works",
@@ -141,7 +153,7 @@ const T = {
     preview: "Xem trước",
     home: "Về trang chính",
     start: "Chọn tệp",
-    startDrop: "hoặc kéo tệp vào đây",
+    startDrop: "hoặc kéo tệp/văn bản vào đây; dán văn bản bằng Ctrl+V",
     startHint: "ẢNH · VIDEO · VĂN BẢN & TÀI LIỆU",
     tabImage: "Ảnh",
     tabVideo: "Video",
@@ -158,14 +170,22 @@ const T = {
     downloadAgain: "Tải lại",
     errTitle: "Không thể xử lý tệp này",
     errService: "Dịch vụ xử lý cục bộ chưa sẵn sàng.",
-    errServiceHint: "Để xử lý văn bản và tài liệu, hãy mở bản Xremove đầy đủ bằng Xremove.exe.",
+    errServiceHint: "TXT, Markdown và DOCX chạy ngay trong HTML này. PDF và video cần dịch vụ đồng hành.",
     errVideo: "Thành phần xử lý video cục bộ cần thiết chưa sẵn sàng.",
-    errUnsupported: "Loại tệp này chưa được hỗ trợ.",
+    errUnsupported: "Loại tệp này chưa được hỗ trợ tại đây. Hãy dùng TXT, Markdown hoặc DOCX để làm sạch tài liệu.",
+    errInvalidOutput: "Kết quả xử lý bị trống hoặc không hợp lệ.",
+    errProcessing: "Xử lý thất bại. Hãy thử lại hoặc kiểm tra nhật ký dịch vụ cục bộ.",
     errLegacyDoc: "Định dạng .doc cũ hiện chưa được hỗ trợ. Vui lòng lưu tài liệu dưới dạng .docx.",
     errRetry: "Thêm tệp khác",
     errRetryBtn: "Thử lại",
     errAddBtn: "Thêm tệp khác",
     actDownload: "Tải kết quả",
+    opClean: "Làm sạch tệp: văn bản & metadata",
+    opBackground: "Tách nền ảnh",
+    opMetadata: "Xóa metadata tệp",
+    metadataHint: "Xóa metadata nhúng được hỗ trợ ngay trên máy. Không thể chứng minh tệp không được tạo bằng AI.",
+    metadataDone: "Đã xử lý metadata tệp",
+    opHint: "Chọn thao tác trước khi chọn tệp.",
     actCopy: "Sao chép ảnh",
     actCopyText: "Sao chép văn bản",
     actAdd: "Thêm tệp khác",
@@ -184,17 +204,18 @@ const T = {
     repDocProcessed: "Đã xử lý tài liệu Word",
     repDetected: "Đã phát hiện ký tự ẩn:",
     repRemoved: "Đã loại bỏ:",
+    repMetadataRemoved: "Thuộc tính tài liệu đã xóa:",
     repVisible: "Nội dung hiển thị:",
     repUnchanged: "Không thay đổi",
     repStructurePreserved: "Cấu trúc tài liệu: Được giữ nguyên",
     repUpdated: "Đã cập nhật",
     noFile: "Chưa chọn tệp",
     noFileHint: "Kéo hoặc chọn hình ảnh, video hoặc văn bản để xem tại đây.",
-    heroTitle: "Xremove v1.0.0 — Ổn định",
+    heroTitle: "Xremove HTML 1.1.2 — Công cụ cục bộ",
     heroSub:
-      "Xử lý cục bộ cho hình ảnh, văn bản/tài liệu tương thích và quy trình video thử nghiệm.\nHình ảnh có thể chạy trực tiếp trên file HTML độc lập. Xử lý văn bản/tài liệu/video cần dịch vụ đồng hành cục bộ với Python 3.10+.\nHỗ trợ video hiện ở mức Thử nghiệm (Beta).",
+      "Tách nền ảnh và làm sạch TXT, Markdown, DOCX ngay trong HTML này. Kéo tài liệu vào để tự xóa ký tự ẩn và thuộc tính DOCX được hỗ trợ. PDF và video cần dịch vụ riêng.",
     introStrip:
-      "Xremove xử lý cục bộ hình ảnh, video và văn bản tương thích. Chỉ cần thả tệp vào và ứng dụng sẽ tự xử lý phần còn lại.",
+      "Chọn thao tác, sau đó chọn tệp để xử lý trên máy.",
     introBadge: "XỬ LÝ CỤC BỘ",
     howTitle: "Cách Xremove hoạt động",
     steps: [
@@ -399,12 +420,25 @@ const CHECKER_BG: CSSProperties = {
   backgroundPosition: "0 0, 0 7px, 7px -7px, -7px 0",
 }
 
-function StartScreen({ onFile, t }: { onFile: (file: File) => void; t: (typeof T)[Lang] }) {
+function StartScreen({ onFiles, operation, setOperation, t }: { onFiles: (files: File[]) => void; operation: "clean" | "background" | "metadata"; setOperation: (value: "clean" | "background" | "metadata") => void; t: (typeof T)[Lang] }) {
   const [drag, setDrag] = useState(false)
   const inputRef = useRef<HTMLInputElement | null>(null)
-  const pick = (file?: File | null) => {
-    if (file && typeof onFile === "function") onFile(file)
+  const pick = (files: FileList | null) => {
+    if (files?.length) onFiles(Array.from(files))
   }
+  useEffect(() => {
+    if (operation === "background") return
+    const onPaste = (event: ClipboardEvent) => {
+      if (event.clipboardData?.files.length) return
+      const value = event.clipboardData?.getData("text/plain")
+      if (value) {
+        event.preventDefault()
+        onFiles([new File([value], "van-ban.txt", { type: "text/plain" })])
+      }
+    }
+    window.addEventListener("paste", onPaste)
+    return () => window.removeEventListener("paste", onPaste)
+  }, [onFiles, operation])
   return (
     <main className="min-h-0 flex-1 overflow-y-auto px-4 py-8 sm:px-6">
       {/* Centered Hero */}
@@ -421,13 +455,25 @@ function StartScreen({ onFile, t }: { onFile: (file: File) => void; t: (typeof T
         </p>
       </div>
 
+      <div className="mx-auto mt-6 max-w-2xl rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+        <p className="mb-3 text-sm font-semibold text-slate-700">{t.opHint}</p>
+        <div className="grid gap-2 sm:grid-cols-2" role="group" aria-label={t.opHint}>
+          {(["clean", "background"] as const).map((value) => (
+            <button key={value} type="button" aria-pressed={operation === value} onClick={() => setOperation(value)} className={`min-h-11 rounded-xl border px-4 py-3 text-sm font-bold focus-visible:ring-2 focus-visible:ring-blue-600 ${operation === value ? "border-blue-600 bg-blue-50 text-blue-800" : "border-slate-300 text-slate-700"}`}>
+              {value === "clean" ? t.opClean : t.opBackground}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <input
         ref={inputRef}
         type="file"
-        accept="image/*,video/*,.txt,.md,.pdf,.docx"
+        accept={operation === "background" ? "image/png,image/jpeg,image/webp" : location.protocol === "file:" ? "image/*,.txt,.md,.markdown,.docx" : "image/*,video/*,.txt,.md,.markdown,.pdf,.docx"}
+        multiple={operation === "background"}
         className="hidden"
         onChange={(e) => {
-          pick(e.target.files?.[0])
+          pick(e.target.files)
           e.target.value = ""
         }}
       />
@@ -435,6 +481,7 @@ function StartScreen({ onFile, t }: { onFile: (file: File) => void; t: (typeof T
       {/* Contained Centered Dropzone Card — Bright, Clean, Inviting */}
       <div className="mx-auto mt-6 max-w-2xl">
         <div
+          data-testid="file-dropzone"
           onDragOver={(e) => {
             e.preventDefault()
             setDrag(true)
@@ -443,7 +490,11 @@ function StartScreen({ onFile, t }: { onFile: (file: File) => void; t: (typeof T
           onDrop={(e) => {
             e.preventDefault()
             setDrag(false)
-            pick(e.dataTransfer.files?.[0])
+            if (e.dataTransfer.files.length) pick(e.dataTransfer.files)
+            else if (operation !== "background") {
+              const value = e.dataTransfer.getData("text/plain")
+              if (value) onFiles([new File([value], "van-ban.txt", { type: "text/plain" })])
+            }
           }}
           onClick={() => inputRef.current?.click()}
           className={`group relative flex min-h-[260px] cursor-pointer flex-col items-center justify-center rounded-2xl border-2 border-dashed p-8 text-center transition-all ${
@@ -776,7 +827,13 @@ function ResultViewer({
         </div>
 
         {/* Cleaning Report Summary for Text & DOCX */}
-        {!cleaning && isTextual && (
+        {!cleaning && report?.operation === "metadata" && (
+          <div className="rounded-xl border border-blue-200 bg-blue-50 px-4 py-3 text-sm text-blue-900">
+            <strong>{t.metadataDone}</strong>
+            <span className="ml-2">{t.metadataHint}</span>
+          </div>
+        )}
+        {!cleaning && isTextual && report?.operation !== "metadata" && (
           <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-[12px] text-slate-700 shadow-2xs">
             {isDocx ? (
               <>
@@ -790,6 +847,10 @@ function ResultViewer({
                 <div className="flex items-center gap-1.5">
                   <span className="font-semibold text-blue-700">{t.repRemoved}</span>
                   <span className="font-mono font-bold text-blue-700">{removedCount}</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <span className="font-semibold text-blue-700">{t.repMetadataRemoved}</span>
+                  <span className="font-mono font-bold text-blue-700">{typeof report?.metadata_removed_count === "number" ? report.metadata_removed_count : 0}</span>
                 </div>
                 <div className="flex items-center gap-1.5">
                   <span className="font-bold text-green-700">{t.repStructurePreserved}</span>
@@ -920,7 +981,62 @@ function ErrorView({
 
 /* ------------------------------------------------------------------ app */
 
+const TEXT_PREVIEW_LIMIT = 200_000
+
+async function previewUtf8(blob: Blob): Promise<string> {
+  const decoder = new TextDecoder("utf-8", { fatal: true })
+  const reader = blob.stream().getReader()
+  let preview = ""
+  let truncated = false
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    const text = decoder.decode(value, { stream: true })
+    if (preview.length < TEXT_PREVIEW_LIMIT) {
+      const room = TEXT_PREVIEW_LIMIT - preview.length
+      preview += text.slice(0, room)
+      if (text.length > room) truncated = true
+    } else if (text.length) truncated = true
+  }
+  const tail = decoder.decode()
+  if (preview.length < TEXT_PREVIEW_LIMIT) {
+    const room = TEXT_PREVIEW_LIMIT - preview.length
+    preview += tail.slice(0, room)
+    if (tail.length > room) truncated = true
+  } else if (tail.length) truncated = true
+  return truncated ? preview + "\n…" : preview
+}
+
+async function checkedOutput(blob: Blob, originalName: string, kind: MediaType): Promise<string | null> {
+  if (blob.size === 0) throw new Error("Invalid output")
+  const lower = originalName.toLowerCase()
+  if (lower.endsWith(".docx")) {
+    const bytes = await blob.arrayBuffer()
+    if (!(await validateDocxPackage(bytes)).valid) throw new Error("Invalid output")
+    return extractDocxPreviewText(bytes)
+  }
+  if (kind === "text") {
+    return previewUtf8(blob)
+  }
+  const signature = new Uint8Array(await blob.slice(0, 12).arrayBuffer())
+  if (lower.endsWith(".pdf")) {
+    if (String.fromCharCode(...signature.slice(0, 5)) !== "%PDF-") throw new Error("Invalid output")
+  } else if (kind === "video") {
+    const ftyp = String.fromCharCode(...signature.slice(4, 8)) === "ftyp"
+    const webm = signature[0] === 0x1a && signature[1] === 0x45 && signature[2] === 0xdf && signature[3] === 0xa3
+    if (!(lower.endsWith(".webm") ? webm : ftyp)) throw new Error("Invalid output")
+  } else if (kind === "image") {
+    const decoded = await createImageBitmap(blob)
+    const valid = decoded.width > 0 && decoded.height > 0
+    decoded.close()
+    if (!valid) throw new Error("Invalid output")
+  }
+  return null
+}
+
 export default function App() {
+  const [operation, setOperation] = useState<"clean" | "background" | "metadata">("clean")
+  const [backgroundFiles, setBackgroundFiles] = useState<File[] | null>(null)
   const [lang, setLang] = useState<Lang>(() => {
     const saved = typeof localStorage !== "undefined" ? localStorage.getItem("xremove.lang") : null
     return saved === "en" || saved === "vi" ? saved : "vi"
@@ -938,6 +1054,10 @@ export default function App() {
   const resultBlob = useRef<Blob | null>(null)
   const resultName = useRef<string>("xremove_clean.png")
   const addInputRef = useRef<HTMLInputElement | null>(null)
+  const runIdRef = useRef(0)
+  const abortRef = useRef<AbortController | null>(null)
+  const urlsRef = useRef<{ before: string | null; result: string | null }>({ before: null, result: null })
+  const resumedRef = useRef(false)
   const t = T[lang]
 
   // Persist language choice.
@@ -949,19 +1069,59 @@ export default function App() {
     }
   }, [lang])
 
+  useEffect(() => {
+    if (resumedRef.current || !pendingServiceJob()) return
+    resumedRef.current = true
+    const controller = new AbortController()
+    abortRef.current = controller
+    const runId = ++runIdRef.current
+    const job = pendingServiceJob()!
+    setOperation(job.operation === "metadata" ? "metadata" : "clean")
+    const kind: MediaType = job.mime.startsWith("video/") ? "video" :
+      job.mime.startsWith("text/") ? "text" : "document"
+    setMediaType(kind)
+    setResultUrl("pending")
+    setCleaning(true)
+    void resumeServiceJob(controller.signal).then(async (value) => {
+      if (!value || controller.signal.aborted || runId !== runIdRef.current) return
+      const res = value.result
+      const cleanText = await checkedOutput(res.blob, job.filename, kind)
+      if (controller.signal.aborted || runId !== runIdRef.current) return
+      resultBlob.current = res.blob
+      resultName.current = res.filename
+      setProcessReport(res.report ?? null)
+      const url = URL.createObjectURL(res.blob)
+      urlsRef.current.result = url
+      setResultUrl(url)
+      setTextAfter(cleanText)
+      setCleaning(false)
+    }).catch((error) => {
+      if (controller.signal.aborted || runId !== runIdRef.current) return
+      setResultUrl(null)
+      setCleaning(false)
+      setErrorMsg(error instanceof Error && error.message === "Invalid output" ? T[lang].errInvalidOutput : T[lang].errService)
+    })
+  }, [])
+
   function showToast(msg: string) {
     setToast(msg)
     window.setTimeout(() => setToast(null), 3000)
   }
 
   function revokeUrls() {
-    if (resultUrl && resultUrl.startsWith("blob:")) URL.revokeObjectURL(resultUrl)
-    if (beforeUrl && beforeUrl.startsWith("blob:")) URL.revokeObjectURL(beforeUrl)
+    if (urlsRef.current.result) URL.revokeObjectURL(urlsRef.current.result)
+    if (urlsRef.current.before) URL.revokeObjectURL(urlsRef.current.before)
+    urlsRef.current = { before: null, result: null }
   }
 
   // The whole pipeline: classify -> route -> process -> preview ready.
   // Note: Auto-download is removed. Download occurs when user clicks "Download result".
   async function handleFile(file: File) {
+    abortRef.current?.abort()
+    const controller = new AbortController()
+    abortRef.current = controller
+    const runId = ++runIdRef.current
+    const isCurrent = () => runId === runIdRef.current && !controller.signal.aborted
     revokeUrls()
     setErrorMsg(null)
     setTextBefore(null)
@@ -980,7 +1140,9 @@ export default function App() {
     let cls: Classification
     try {
       cls = await classifyFile(file)
+      if (!isCurrent()) return
     } catch {
+      if (!isCurrent()) return
       setResultUrl(null)
       setBeforeUrl(null)
       setErrorMsg(t.errUnsupported)
@@ -1008,25 +1170,33 @@ export default function App() {
     // Original preview
     const before =
       cls.kind === "image" || cls.kind === "video" ? URL.createObjectURL(file) : null
+    urlsRef.current.before = before
     setBeforeUrl(before)
 
     if (isDocxFile) {
       try {
         const fileBuf = await file.arrayBuffer()
         const valid = await isDocxBytes(fileBuf)
+        if (!isCurrent()) return
         if (!valid) {
+          revokeUrls()
           setErrorMsg(t.errUnsupported)
           return
         }
         const extracted = await extractDocxPreviewText(fileBuf)
+        if (!isCurrent()) return
         setTextBefore(extracted)
       } catch {
+        if (!isCurrent()) return
         setTextBefore(null)
       }
     } else if (cls.kind === "text") {
       try {
-        setTextBefore(await file.text())
+        const content = await file.slice(0, TEXT_PREVIEW_LIMIT).text()
+        if (!isCurrent()) return
+        setTextBefore(file.size > TEXT_PREVIEW_LIMIT ? content + "\n…" : content)
       } catch {
+        if (!isCurrent()) return
         setTextBefore(null)
       }
     }
@@ -1035,38 +1205,23 @@ export default function App() {
     setCleaning(true)
 
     try {
-      const res = await processFile(file, cls)
+      const res = await processFile(file, cls, controller.signal, operation === "metadata" ? "metadata" : "clean")
+      if (!isCurrent()) return
+      const cleanText = await checkedOutput(res.blob, file.name, cls.kind)
+      if (!isCurrent()) return
       resultBlob.current = res.blob
       resultName.current = res.filename
       setProcessReport(res.report ?? null)
       const outUrl = URL.createObjectURL(res.blob)
+      urlsRef.current.result = outUrl
       setResultUrl(outUrl)
-
-      if (isDocxFile) {
-        try {
-          const resBuf = await res.blob.arrayBuffer()
-          const validation = await validateDocxPackage(resBuf)
-          if (!validation.valid) {
-            throw new Error("Invalid output DOCX package")
-          }
-          const cleanText = await extractDocxPreviewText(resBuf)
-          setTextAfter(cleanText)
-        } catch {
-          setTextAfter(null)
-        }
-      } else if (cls.kind === "text") {
-        try {
-          setTextAfter(await res.blob.text())
-        } catch {
-          setTextAfter(null)
-        }
-      }
-
+      if (cleanText !== null) setTextAfter(cleanText)
       setCleaning(false)
     } catch (err) {
+      if (!isCurrent()) return
       setCleaning(false)
       setResultUrl(null)
-      if (before && before.startsWith("blob:")) URL.revokeObjectURL(before)
+      revokeUrls()
       setBeforeUrl(null)
       setTextBefore(null)
       setTextAfter(null)
@@ -1077,13 +1232,18 @@ export default function App() {
         setErrorMsg(cls.kind === "video" ? t.errVideo : t.errService)
       } else if (err instanceof UnsupportedFileError) {
         setErrorMsg(t.errUnsupported)
+      } else if (err instanceof Error && err.message === "Invalid output") {
+        setErrorMsg(t.errInvalidOutput)
       } else {
-        setErrorMsg(t.errUnsupported)
+        setErrorMsg(t.errProcessing)
       }
     }
   }
 
   function closeViewer() {
+    ++runIdRef.current
+    abortRef.current?.abort()
+    abortRef.current = null
     revokeUrls()
     setResultUrl(null)
     setBeforeUrl(null)
@@ -1098,8 +1258,17 @@ export default function App() {
 
   // Return home and clear all previous file state.
   function reset() {
+    setBackgroundFiles(null)
     closeViewer()
     setErrorMsg(null)
+  }
+
+  function handleFiles(files: File[]) {
+    if (operation === "background") {
+      setBackgroundFiles(files)
+    } else if (files[0]) {
+      handleFile(files[0])
+    }
   }
 
   return (
@@ -1111,12 +1280,15 @@ export default function App() {
         t={t}
       />
 
-      {errorMsg ? (
+      {backgroundFiles ? (
+        <BackgroundWorkspace initialFiles={backgroundFiles} lang={lang} onClose={reset} />
+      ) : errorMsg ? (
         <ErrorView
           message={errorMsg}
-          canRetry={pendingFileRef.current != null}
+          canRetry={pendingFileRef.current != null || pendingServiceJob() != null}
           onRetry={() => {
             if (pendingFileRef.current) handleFile(pendingFileRef.current)
+            else if (pendingServiceJob()) window.location.reload()
           }}
           onAddMore={reset}
           t={t}
@@ -1138,13 +1310,13 @@ export default function App() {
           t={t}
         />
       ) : (
-        <StartScreen onFile={handleFile} t={t} />
+        <StartScreen onFiles={handleFiles} operation={operation} setOperation={setOperation} t={t} />
       )}
 
       <input
         ref={addInputRef}
         type="file"
-        accept="image/*,video/*,.txt,.md,.pdf,.docx"
+        accept={location.protocol === "file:" ? "image/*,.txt,.md,.markdown,.docx" : "image/*,video/*,.txt,.md,.markdown,.pdf,.docx"}
         className="hidden"
         onChange={(e) => {
           const file = e.target.files?.[0]

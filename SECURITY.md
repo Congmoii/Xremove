@@ -1,34 +1,15 @@
 # Security Policy
 
-## Supported Versions
+## Supported version
 
-Only the latest stable release of Xremove is supported for security updates.
+Security fixes target the latest `1.1.x` source and HTML build. Older Windows packages are not maintained by the HTML-only release process.
 
-| Version | Supported          |
-| :---    | :---               |
-| 1.0.x   | :white_check_mark: |
-| < 1.0   | :x:                |
+## Scope
 
----
+The standalone HTML processes supported files in the browser. It does not need the local Python service. A separate, legacy Windows service exists in the source tree and binds to loopback; it accepts binary uploads for supported jobs. Report vulnerabilities affecting either path.
 
-## Security Architecture Scope
+Generated HTML embeds an ONNX model fetched during build. The source repository excludes the model and verifies its pinned SHA-256 when downloading it. This integrity check does not establish the right to redistribute the model; see [third-party notices](THIRD_PARTY_LICENSES.md).
 
-The security surface of Xremove includes:
-1. **Native Windows Launcher (`launcher/XremoveLauncher.cs`)**: Validates application root integrity, restricts companion service binding to loopback (`127.0.0.1`), and manages process lifecycles.
-2. **Local Engine B Companion Service (`service/engine_b_service.py`)**: Binds exclusively to loopback (`127.0.0.1:8765`), accepts local Base64 payloads, and prevents arbitrary code execution.
-3. **Frontend Document & File Classifiers (`src/lib/classify.ts`, `src/lib/docxPreview.ts`)**: Safely parses OOXML ZIP structures in client memory without executing untrusted macros or external payloads.
+## Reporting a vulnerability
 
----
-
-## Reporting a Vulnerability
-
-If you discover a potential security vulnerability in Xremove, please do **not** open a public issue.
-
-Instead, report it privately through **[GitHub Security Advisories](https://github.com/topics/security-advisories)** on the repository (click **Security** > **Advisories** > **Report a vulnerability**).
-
-If private advisories are not yet configured on your fork, please contact the maintainers via the designated security reporting channel before publishing details.
-
-Please include in your report:
-- Type of issue (e.g., buffer handling, local loopback bypass, XXE/XML parsing vulnerability)
-- Full reproduction steps and proof-of-concept (using non-sensitive synthetic test files)
-- Impact assessment
+Use the repository's **Security → Advisories → Report a vulnerability** option if private reporting is enabled. Do not include sensitive user documents; use synthetic reproductions. If private reporting is unavailable, contact the repository maintainer privately before opening a public issue with exploit details.

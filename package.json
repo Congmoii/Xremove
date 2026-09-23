@@ -1,22 +1,25 @@
 {
   "name": "xremove",
   "private": true,
-  "version": "1.0.0",
+  "version": "1.1.2",
   "description": "Local-first desktop utility for inspecting and cleaning supported watermark and provenance traces.",
   "type": "module",
   "packageManager": "pnpm@12.1.0",
   "scripts": {
     "dev": "vite --host 0.0.0.0",
-    "build": "vite build",
+    "build": "node scripts/ensure_model.mjs && vite build",
     "preview": "vite preview",
-    "test": "node --test tests/**/*.test.ts",
+    "test": "node scripts/ensure_model.mjs && node --test tests/**/*.test.ts",
     "typecheck": "tsc --noEmit",
     "format": "oxfmt",
     "bootstrap:vendor": "node scripts/bootstrap_vendor.mjs",
+    "fetch:model": "node scripts/ensure_model.mjs",
     "build:release": "node scripts/create_release.mjs"
   },
   "dependencies": {
+    "fflate": "0.8.2",
     "gemini-watermark-remover": "github:GargantuaX/gemini-watermark-remover#bef0303a437902286a18ab4d1586629f198b90b7",
+    "onnxruntime-web": "1.27.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },

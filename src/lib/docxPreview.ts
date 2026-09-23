@@ -7,21 +7,30 @@
  */
 
 // Helper to decompress a raw deflate stream in the browser or Node.js
+const MAX_XML_BYTES = 10 * 1024 * 1024;
+const PREVIEW_ENTRIES = new Set(["[Content_Types].xml", "word/document.xml", "word/_rels/document.xml.rels"]);
+
 async function inflateRaw(compressedData: Uint8Array): Promise<Uint8Array> {
   if (typeof DecompressionStream !== "undefined") {
     try {
       const ds = new DecompressionStream("deflate-raw");
       const writer = ds.writable.getWriter();
-      writer.write(compressedData);
+      // DOM BufferSource expects an ArrayBuffer-backed view, not ArrayBufferLike.
+      writer.write(new Uint8Array(compressedData));
       writer.close();
       const reader = ds.readable.getReader();
       const chunks: Uint8Array[] = [];
+      let totalLen = 0;
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+        totalLen += value.length;
+        if (totalLen > MAX_XML_BYTES) {
+          await reader.cancel();
+          throw new Error("DOCX XML entry exceeds preview limit");
+        }
         chunks.push(value);
       }
-      const totalLen = chunks.reduce((acc, c) => acc + c.length, 0);
       const res = new Uint8Array(totalLen);
       let pos = 0;
       for (const c of chunks) {
@@ -52,24 +61,30 @@ export async function parseZipEntries(buffer: ArrayBuffer | Uint8Array): Promise
 
   let offset = 0;
   const len = bytes.length;
+  let headers = 0;
 
   while (offset < len - 4) {
     // Look for Local File Header signature: PK\x03\x04 (0x04034b50)
     if (view.getUint32(offset, true) === 0x04034b50) {
+      if (offset + 30 > len || ++headers > 10_000) throw new Error("Invalid or excessive ZIP headers");
       const compMethod = view.getUint16(offset + 8, true);
       const compSize = view.getUint32(offset + 18, true);
       const uncompSize = view.getUint32(offset + 22, true);
       const nameLen = view.getUint16(offset + 26, true);
       const extraLen = view.getUint16(offset + 28, true);
-
+      if (offset + 30 + nameLen + extraLen > len) throw new Error("Truncated ZIP header");
       const nameBytes = bytes.subarray(offset + 30, offset + 30 + nameLen);
       const name = decoder.decode(nameBytes);
       const dataStart = offset + 30 + nameLen + extraLen;
-
-      if (dataStart + compSize <= len) {
+      if (dataStart + compSize > len) throw new Error("Truncated ZIP member");
+      if (PREVIEW_ENTRIES.has(name)) {
+        if (uncompSize > MAX_XML_BYTES || compSize > MAX_XML_BYTES) {
+          throw new Error("DOCX XML entry exceeds preview limit");
+        }
         const rawData = bytes.subarray(dataStart, dataStart + compSize);
         if (compMethod === 0) {
           // Stored (no compression)
+          if (rawData.length > MAX_XML_BYTES) throw new Error("DOCX XML entry exceeds preview limit");
           entries.set(name, rawData);
         } else if (compMethod === 8) {
           // Deflated

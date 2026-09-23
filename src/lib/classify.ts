@@ -2,7 +2,7 @@
 // Decides a file's kind from extension + MIME + magic bytes.
 // Guarantee: an unknown binary or document file is NEVER classified as plain text.
 
-import { isLegacyDocBytes } from "./docxPreview";
+import { isLegacyDocBytes } from "./docxPreview.ts";
 
 export type FileKind = "image" | "video" | "text" | "document" | "legacy_doc" | "unknown";
 

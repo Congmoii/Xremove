@@ -1,148 +1,50 @@
+import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import crypto from "node:crypto";
-import { execSync } from "node:child_process";
+import { execFileSync } from "node:child_process";
+import { zipSync } from "fflate";
 
-function sha256(data) {
-  return crypto.createHash("sha256").update(data).digest("hex");
+// GitHub Release candidate: HTML + notices only. Windows runtime and FFmpeg
+// are deliberately excluded until their redistribution obligations are met.
+const version = JSON.parse(fs.readFileSync("package.json", "utf8")).version;
+const prefix = `Xremove-v${version}`;
+const output = path.resolve("release/github");
+const htmlPath = path.join(output, `${prefix}.html`);
+const zipPath = path.join(output, `${prefix}-HTML-only.zip`);
+
+for (const file of [htmlPath, zipPath]) {
+  if (fs.existsSync(file)) throw new Error(`Refusing to overwrite existing candidate: ${file}`);
 }
 
-function sha256File(filepath) {
-  return sha256(fs.readFileSync(filepath));
+execFileSync(process.execPath, ["scripts/ensure_model.mjs"], { stdio: "inherit" });
+execFileSync(process.execPath, ["node_modules/vite/bin/vite.js", "build"], { stdio: "inherit" });
+
+const builtHtml = fs.readFileSync("dist/index.html");
+if (!builtHtml.includes(Buffer.from(`Xremove HTML ${version}`))) {
+  throw new Error("Built HTML does not contain the expected standalone version");
 }
+const notices = [
+  "README.md", "LICENSE", "THIRD_PARTY_LICENSES.md",
+  "licenses/Apache-2.0.txt", "licenses/ONNX-Runtime-MIT.txt", "licenses/fflate-MIT.txt",
+  "licenses/React-MIT.txt", "licenses/Tailwind-MIT.txt",
+];
+// The .html asset is distributed separately from the ZIP, so carry notices there too.
+const legalNotice = ["LICENSE", "THIRD_PARTY_LICENSES.md", ...notices.filter((name) => name.startsWith("licenses/"))]
+  .map((name) => `===== ${name} =====\n${fs.readFileSync(name, "utf8")}`)
+  .join("\n");
+if (legalNotice.includes("-->")) throw new Error("License text cannot be embedded in an HTML comment");
+const html = Buffer.concat([builtHtml, Buffer.from(`\n<!-- Xremove distribution notices\n${legalNotice}\n-->\n`)]);
+const archive = Object.create(null);
+archive[`${prefix}.html`] = new Uint8Array(html);
+for (const name of notices) archive[name] = new Uint8Array(fs.readFileSync(name));
+const zip = zipSync(archive, { level: 6, mtime: new Date("1980-01-01T00:00:00Z") });
 
-function copyDirRecursive(src, dest, filterFn = null) {
-  fs.mkdirSync(dest, { recursive: true });
-  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
-    if (filterFn && !filterFn(entry.name, path.join(src, entry.name))) continue;
-    const srcPath = path.join(src, entry.name);
-    const destPath = path.join(dest, entry.name);
-    if (entry.isDirectory()) {
-      copyDirRecursive(srcPath, destPath, filterFn);
-    } else {
-      fs.copyFileSync(srcPath, destPath);
-    }
-  }
+fs.mkdirSync(output, { recursive: true });
+fs.writeFileSync(htmlPath, html, { flag: "wx" });
+fs.writeFileSync(zipPath, zip, { flag: "wx" });
+for (const file of [htmlPath, zipPath]) {
+  const hash = crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+  fs.writeFileSync(`${file}.sha256.txt`, `${hash}  ${path.basename(file)}\n`, { flag: "wx" });
+  console.log(`${path.basename(file)}: ${fs.statSync(file).size} bytes, SHA-256 ${hash}`);
 }
-
-async function buildRelease() {
-  console.log("==================================================");
-  console.log("BUILDING XREMOVE v1.0.0 ALL-IN-ONE FULL RELEASE");
-  console.log("==================================================");
-
-  // 0. Ensure upstream vendor is bootstrapped
-  const vendorServerScript = path.resolve("vendor/watermarks-remover/service/scripts/server.py");
-  if (!fs.existsSync(vendorServerScript)) {
-    console.log("Bootstrapping upstream vendor dependency...");
-    execSync("node scripts/bootstrap_vendor.mjs", { stdio: "inherit" });
-  }
-
-  // 1. Build Vite single HTML
-  console.log("\n[1/7] Running Vite build with singlefile plugin...");
-  execSync("pnpm run build", { stdio: "inherit" });
-
-  const builtHtmlPath = path.resolve("dist/index.html");
-  if (!fs.existsSync(builtHtmlPath)) {
-    throw new Error("dist/index.html was not generated!");
-  }
-  const htmlContent = fs.readFileSync(builtHtmlPath);
-  const htmlHash = sha256(htmlContent);
-  console.log(`✓ Built single HTML (${htmlContent.length} bytes, SHA256: ${htmlHash})`);
-
-  // 2. Prepare release directories
-  console.log("\n[2/7] Preparing release directories...");
-  fs.mkdirSync("release/single-html", { recursive: true });
-  fs.mkdirSync("release/final", { recursive: true });
-
-  const singleHtmlDest = path.resolve("release/single-html/Xremove.html");
-  const finalHtmlDest = path.resolve("release/final/Xremove.html");
-
-  fs.writeFileSync(singleHtmlDest, htmlContent);
-  fs.writeFileSync(finalHtmlDest, htmlContent);
-  fs.writeFileSync("release/final/Xremove.html.sha256.txt", `${htmlHash}  Xremove.html\n`);
-
-  // 3. Create full portable package staging
-  console.log("\n[3/7] Staging Full distribution...");
-  const fullStagingRoot = path.resolve("release/pack_staging/Xremove-v1.0.0-Full");
-  if (fs.existsSync("release/pack_staging")) {
-    fs.rmSync("release/pack_staging", { recursive: true, force: true });
-  }
-  fs.mkdirSync(fullStagingRoot, { recursive: true });
-
-  // Compile native Xremove.exe launcher if on Windows
-  const launcherCs = path.resolve("launcher/XremoveLauncher.cs");
-  const launcherExeStaged = path.join(fullStagingRoot, "Xremove.exe");
-  const cscPath = "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe";
-
-  if (process.platform === "win32" && fs.existsSync(cscPath) && fs.existsSync(launcherCs)) {
-    console.log("Compiling native Xremove.exe launcher...");
-    execSync(`"${cscPath}" /target:winexe /out:"${launcherExeStaged}" /reference:System.Windows.Forms.dll,System.dll,System.Drawing.dll "${launcherCs}"`, { stdio: "inherit" });
-  } else if (fs.existsSync("Xremove.exe")) {
-    fs.copyFileSync("Xremove.exe", launcherExeStaged);
-  }
-
-  // Copy Xremove.html
-  fs.writeFileSync(path.join(fullStagingRoot, "Xremove.html"), htmlContent);
-
-  // Copy service directory
-  console.log("\n[4/7] Copying service adapter...");
-  copyDirRecursive("service", path.join(fullStagingRoot, "service"));
-
-  // Copy upstream vendor libraries
-  console.log("\n[5/7] Copying upstream vendor libraries...");
-  if (fs.existsSync("vendor/watermarks-remover")) {
-    copyDirRecursive(
-      "vendor/watermarks-remover",
-      path.join(fullStagingRoot, "vendor", "watermarks-remover"),
-      (name) => name !== ".git" && name !== ".github" && name !== "tests" && name !== "benchmarks"
-    );
-  }
-
-  // Copy bundled Python runtime if present locally
-  console.log("\n[6/7] Staging runtime dependencies...");
-  if (fs.existsSync("runtime/python")) {
-    copyDirRecursive("runtime/python", path.join(fullStagingRoot, "runtime", "python"));
-  }
-  if (fs.existsSync("tools/ffmpeg")) {
-    copyDirRecursive("tools/ffmpeg", path.join(fullStagingRoot, "tools", "ffmpeg"));
-  }
-
-  // Create empty logs folder
-  fs.mkdirSync(path.join(fullStagingRoot, "logs"), { recursive: true });
-
-  // 4. Compress to release/final/Xremove-v1.0.0-Full-Windows.zip
-  const zipDest = path.resolve("release/final/Xremove-v1.0.0-Full-Windows.zip");
-  console.log("\n[7/7] Compressing to release/final/Xremove-v1.0.0-Full-Windows.zip...");
-
-  if (process.platform === "win32") {
-    execSync(`powershell -Command "Compress-Archive -Path '${fullStagingRoot}' -DestinationPath '${zipDest}' -Force"`, { stdio: "inherit" });
-  } else {
-    execSync(`cd "${path.dirname(fullStagingRoot)}" && zip -r "${zipDest}" "${path.basename(fullStagingRoot)}"`, { stdio: "inherit" });
-  }
-
-  const zipHash = sha256File(zipDest);
-  fs.writeFileSync("release/final/Xremove-v1.0.0-Full-Windows.zip.sha256.txt", `${zipHash}  Xremove-v1.0.0-Full-Windows.zip\n`);
-
-  // Clean staging
-  fs.rmSync("release/pack_staging", { recursive: true, force: true });
-
-  console.log("\n==================================================");
-  console.log("FULL RELEASE BUILD COMPLETED SUCCESSFULLY");
-  console.log("==================================================");
-  console.log("Final ZIP:", zipDest);
-  console.log("ZIP SHA256:", zipHash);
-  console.log("Final HTML:", finalHtmlDest);
-  console.log("HTML SHA256:", htmlHash);
-
-  return {
-    zipDest,
-    zipHash,
-    finalHtmlDest,
-    htmlHash,
-  };
-}
-
-buildRelease().catch((err) => {
-  console.error("Full release build failed:", err);
-  process.exit(1);
-});
+console.log("HTML-only candidate built. Review model-weight rights before public release.");

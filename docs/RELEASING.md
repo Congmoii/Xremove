@@ -1,65 +1,16 @@
-# Releasing Xremove
+# Chuẩn bị GitHub và phát hành HTML
 
-This guide outlines the standard procedure for building, verifying, and publishing an official Xremove release.
+## Repository mã nguồn
 
----
+1. Chỉ commit tệp mã nguồn và tài liệu. `.gitignore` loại trừ `dist/`, `release/`, `runtime/python/`, `tools/ffmpeg/`, `models/*.onnx`, `output/`, `backups/`, `github-export/` và dữ liệu tạm. Kiểm tra danh sách tệp sẽ commit và quét bí mật trước khi push.
+2. Cài dependency theo `pnpm-lock.yaml`. Chạy `pnpm run fetch:model` và `pnpm run bootstrap:vendor`; model và upstream service được kiểm tra theo hash/commit cố định. Không thay binary chưa được rà soát.
+3. Chạy `pnpm run typecheck`, `pnpm test`, `pnpm run build`, `node tests/verify_standalone_text_e2e.mjs`.
 
-## 1. Clean Pre-Flight Verification
+## Bản ứng viên GitHub Release
 
-Ensure your working directory is clean and all tests pass:
+1. Chạy `pnpm run build:release`, sau đó `node tests/verify_release_package.mjs`.
+2. Kiểm tra `release/github/Xremove-v<version>.html` và `Xremove-v<version>-HTML-only.zip` cùng các tệp `.sha256.txt`. ZIP chỉ chứa HTML, README và giấy phép/thông báo. Không đưa ZIP hoặc HTML 61 MB vào lịch sử Git.
+3. Kiểm tra nội dung tiếng Anh/tiếng Việt trên trình duyệt phổ biến; thử ảnh và DOCX đa dạng, không chỉ fixture tự động. Nêu rõ giới hạn PDF/video và chất lượng mask.
+4. **Chỉ công bố public sau khi xác nhận quyền phân phối của đúng trọng số ONNX trong HTML.** Trang mirror ghi Apache-2.0; đây không thay thế việc xác minh checkpoint và bản chuyển đổi ONNX. Nếu chưa xác nhận được, giữ artifact cục bộ hoặc private và không gắn nhãn phát hành công khai.
 
-```bash
-# 1. Ensure frozen dependencies
-pnpm install --frozen-lockfile
-
-# 2. Type check
-pnpm run typecheck
-
-# 3. Unit tests
-pnpm test
-
-# 4. Production bundle build
-pnpm run build
-```
-
----
-
-## 2. Build the Full Windows Distribution Package
-
-Generate the all-in-one distribution bundle:
-
-```bash
-node scripts/create_release.mjs
-```
-
-This script:
-1. Builds the singlefile `Xremove.html`.
-2. Compiles `launcher/XremoveLauncher.cs` into native `Xremove.exe`.
-3. Stages the bundled Python runtime and vendor dependencies.
-4. Packages everything into `release/final/Xremove-v1.0.0-Full-Windows.zip`.
-5. Computes the SHA256 checksum.
-
----
-
-## 3. Real-World E2E Verification
-
-Before publishing any release:
-1. Extract `release/final/Xremove-v1.0.0-Full-Windows.zip` into a clean test location.
-2. Run `Xremove.exe` directly.
-3. Verify that:
-   - `/health` responds with HTTP 200.
-   - Images, TXT files, and DOCX files process accurately.
-   - Cleaned output opens in Microsoft Word without repair warnings.
-   - Loose execution outside the folder produces the expected bilingual guidance.
-
----
-
-## 4. Tagging and Publishing to GitHub
-
-```bash
-# 1. Create a signed Git release tag
-git tag -a v1.0.0 -m "Release v1.0.0"
-git push origin v1.0.0
-
-# 2. Attach the generated ZIP and SHA256 to the GitHub Release
-```
+Gói Windows 1.1.0/1.1.1 trước đây có bản FFmpeg full build `--enable-gpl --enable-version3` (GPLv3). Quy trình HTML-only hiện không đóng gói FFmpeg. Nếu muốn phát hành lại gói Windows, cần rà soát giấy phép, thông báo, mã nguồn tương ứng và nghĩa vụ của các thư viện đi kèm theo [FFmpeg Legal](https://www.ffmpeg.org/legal.html) trước khi tạo Release riêng. Không dùng lại ZIP cũ làm asset của phiên bản HTML mới.

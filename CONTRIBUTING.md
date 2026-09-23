@@ -6,7 +6,7 @@ Thank you for your interest in contributing to Xremove! We welcome issues, bug f
 
 ## Development Prerequisites
 
-- **Node.js**: v20.x or v22.x LTS
+- **Node.js**: v24 or newer
 - **Package Manager**: `pnpm` (v12.1.0 or compatible)
 - **Python**: 3.10+ (for local Engine B service development and tests)
 - **Git**: 2.30+
@@ -31,7 +31,12 @@ Thank you for your interest in contributing to Xremove! We welcome issues, bug f
    pnpm run bootstrap:vendor
    ```
 
-4. **Run the local development server:**
+4. **Fetch the pinned model and verify its hash:**
+   ```bash
+   pnpm run fetch:model
+   ```
+
+5. **Run the local development server:**
    ```bash
    pnpm run dev
    ```
@@ -51,6 +56,10 @@ pnpm test
 
 # 3. Production bundle build
 pnpm run build
+
+# 4. Browser workflow (install Chromium once)
+pnpm exec playwright install chromium
+node tests/verify_standalone_text_e2e.mjs
 ```
 
 ---
@@ -60,7 +69,8 @@ pnpm run build
 1. **Strict Privacy**: Never commit private, proprietary, or personal documents into test fixtures or examples. Use generic synthetic text and test documents only.
 2. **Deterministic Upstream Pins**: Do not upgrade or float third-party algorithm commits without formal testing and approval.
 3. **No Hidden Telemetry**: All features must remain local-first. Do not introduce remote telemetry, tracking, or mandatory external cloud services.
-4. **Pull Requests**:
+4. **Source-only Git history**: Do not commit built HTML, model weights, FFmpeg, Python runtimes, backups or release ZIPs. Review model-weight provenance before public distribution of an HTML build.
+5. **Pull Requests**:
    - Provide a clear description of what changed and why.
    - Reference any related issues.
    - Ensure all automated checks pass.

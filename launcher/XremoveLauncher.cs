@@ -9,7 +9,7 @@ namespace XremoveLauncher
 {
     static class Program
     {
-        private const string HealthUrl = "http://127.0.0.1:8765/health";
+        private const string HealthUrl = "http://127.0.0.1:8765/api/health";
 
         [STAThread]
         static void Main()
@@ -84,7 +84,7 @@ namespace XremoveLauncher
 
                 // Check if Engine B is already healthy
                 bool isHealthy = CheckHealth();
-                log("Initial Health Check: " + (isHealthy ? "ALREADY RUNNING (200 OK)" : "OFFLINE"));
+                log("Initial Health Check: " + (isHealthy ? "XREMOVE 1.1 SERVICE RUNNING" : "OFFLINE OR OTHER SERVICE"));
 
                 Process childProcess = null;
 
@@ -152,8 +152,8 @@ namespace XremoveLauncher
                     return;
                 }
 
-                log("Engine B is healthy (200 OK). Opening UI in default browser: " + htmlFile);
-                Process.Start(new ProcessStartInfo(htmlFile) { UseShellExecute = true });
+                log("Xremove local service verified. Opening same-origin UI.");
+                Process.Start(new ProcessStartInfo("http://127.0.0.1:8765/") { UseShellExecute = true });
                 log("UI launched successfully.");
             }
             catch (Exception ex)
@@ -179,7 +179,13 @@ namespace XremoveLauncher
 
                 using (HttpWebResponse resp = (HttpWebResponse)req.GetResponse())
                 {
-                    return resp.StatusCode == HttpStatusCode.OK;
+                    if (resp.StatusCode != HttpStatusCode.OK || !resp.ContentType.StartsWith("application/json")) return false;
+                    using (StreamReader reader = new StreamReader(resp.GetResponseStream()))
+                    {
+                        string body = reader.ReadToEnd();
+                        return body.Contains(@"""service"": ""xremove-local-jobs""") &&
+                               body.Contains(@"""version"": ""1.1.1""");
+                    }
                 }
             }
             catch
